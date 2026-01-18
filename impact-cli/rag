@@ -1,0 +1,6 @@
+#!/usr/bin/env zsh
+# Lightweight wrapper to run the RAG CLI
+# Usage: rag ask "<question>"
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+python3 "$SCRIPT_DIR/../rag.py" "$@"

@@ -1,83 +1,68 @@
-# Bahmni Impact & RAG CLI
+# Bahmni / OpenMRS Risk‑Aware RAG Backend (CLI)
 
-Lightweight CLI to forecast change impact and risk in large Java codebases (starting with Bahmni / OpenMRS), plus a minimal RAG indexer to retrieve relevant code with impact context. It helps answer: "If I change this file or class, what could break?" and "Is this safe to optimize?"
+## What Problem This Solves (Legacy Risk & Uncertainty)
+- Legacy clinical systems are brittle: changes can silently break core patient flows.
+- Teams lack fast, grounded answers to: what rules exist, what’s risky, and what must not change.
+- This backend reduces uncertainty by retrieving real code with attached risk signals for safer decisions.
 
-## Features
-- Impact analysis (impact.py):
-  - Scans the codebase for files depending on the target class
-  - Detects risk signals: throws/validation, transactional, null checks, domain-critical keywords
-  - Computes an explainable risk score: LOW / MEDIUM / HIGH
-  - Outputs the top affected files and signal breakdown
-- RAG (rag.py):
-  - Ingest 2–3 Java files, chunk them, and build local embeddings
-  - Attach impact/risk metadata from `impact.py`
-  - `ask` retrieves relevant code snippets with risk context and a brief grounded explanation
+## What the System Does (Risk‑Aware RAG Backend)
+- Retrieves relevant Java code (e.g., `PatientService`) and injects impact metadata: risk level, score, dependencies, and defensive signals.
+- Produces structured, enterprise‑safe output:
+  - Critical Business Rules to Preserve
+  - Why This Is Risky
+  - Optimization Guidance (Safe / Do Not Touch)
+- No code rewriting. No hallucination. No UI. Backend-only, grounded in sources.
 
-## Install
-Python 3.9+ recommended. Install dependencies:
+## How to Run (CLI Command)
+1) Install dependencies:
 
 ```bash
 pip3 install -r requirements.txt
 ```
 
-## Usage
-### Impact analysis
-Analyze a Java class and the downstream impact within a project root:
+2) Optional: add the CLI to PATH for a neat `rag` command (macOS/zsh):
 
 ```bash
-python3 impact.py path/to/PatientServiceImpl.java --root /path/to/bahmni-core
+export PATH="$(pwd)/impact-cli:$PATH"
 ```
 
-Show all dependent files instead of the top slice:
+3) Ingest a small set of Java files (2–3 only) from Bahmni/OpenMRS:
 
 ```bash
-python3 impact.py path/to/PatientServiceImpl.java --root /path/to/bahmni-core --show-all
+python3 rag.py scan PatientService --root /path/to/openmrs-core
+python3 rag.py ingest /path/to/openmrs-core/api/src/main/java/org/openmrs/api/PatientService.java --root /path/to/openmrs-core
 ```
 
-### RAG demo (index + ask)
-1) Ingest a small set of Java files (2–3 files only):
+4) Ask targeted questions (stable single result shown):
 
 ```bash
-python3 rag.py ingest path/to/PatientService.java path/to/PatientServiceImpl.java --root /path/to/bahmni-core
+rag ask --best "Why is PatientService risky?"
+rag ask --best "What business rules must be preserved here?"
+rag ask --best "Is this service safe to optimize?"
 ```
 
-2) Ask targeted questions grounded in retrieved code + risk context:
+If you didn’t add `rag` to PATH, use:
 
 ```bash
-python3 rag.py ask "Why is PatientService risky?"
-python3 rag.py ask "What business rules must be preserved here?"
-python3 rag.py ask "Is this service safe to optimize?"
+./impact-cli/rag ask --best "Why is PatientService risky?"
 ```
 
-## How it works (simplified)
-### Impact
-- Finds dependents via:
-  - Direct imports: `import ... PatientServiceImpl;`
-  - Indirect references: `new PatientServiceImpl(...)`, `extends PatientServiceImpl`, `PatientServiceImpl.method(...)`, etc.
-- Scans the target file for signals:
-  - `throw`/`throws`, `validate*`, `@Transactional`, null checks (`!= null`, `== null`, `not null`)
-  - Domain keywords: patient, encounter, order, identifier, visit, provider, obs, concept, lab, drug
-- Scores with simple weights prioritizing explainability over precision, then bins into LOW/MEDIUM/HIGH.
+5) Interactive chat-style session (stateful, grounded, safe):
 
-### RAG
-- Chunks each Java file by lines (default 30, 8-line overlap) for readability.
-- Builds lightweight embeddings using `HashingVectorizer` (local, fast, no model download).
-- Attaches per-file risk metadata (`level`, `score`, `deps`) from `impact.py` to each chunk.
-- Stores vectors in `.rag_index/vectors.npy` and metadata in `.rag_index/index.json`.
-- `ask` embeds the question and returns top-k similar chunks with file name, risk level, relevant code snippet, and a brief explanation grounded in retrieved context.
+```bash
+rag chat
+# then ask multiple related questions:
+# › Why is PatientService risky?
+# › What must not change?
+# › Is logging safe to optimize?
+# Type 'exit' or 'quit' to end.
+```
 
-## Notes & Limitations
-- Text-based heuristics: No full semantic parsing, by design for speed.
-- Package-level impacts and runtime wiring (Spring, transactions) are approximated via annotations/keywords.
-- Excludes typical build output directories (`build`, `target`, `out`, `.git`, `node_modules`).
- - Embeddings use hashing-based vectors for the demo; swap in Sentence Transformers or FAISS later if needed.
+## Demo (Loom + Screenshot)
+- Loom: https://www.loom.com/share/your-demo-link-here
+- Screenshot: docs/demo.png
 
-## Roadmap
-- Enrich domain keyword sets from Bahmni modules
-- Optional exclusion of tests
-- Support multi-class files and inner classes
-- Export JSON for CI dashboards
-- Optional FAISS or pgvector backend
-
-## Contributing
-PRs welcome. Keep changes small, focused, and explainable.
+## Future Plan (Backend First)
+- Generalize the RAG engine across codebases with consistent risk signals.
+- Improve structural and domain signals (transactions, authorization, exception contracts).
+- Expose as a reusable backend service (JSON/HTTP), ready for CI/CD and tools.
