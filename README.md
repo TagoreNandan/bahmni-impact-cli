@@ -59,7 +59,7 @@ rag chat
 ```
 
 ## Demo:
-- Loom: [https://www.loom.com/share/your-demo-link-here](https://www.loom.com/share/7195aed97d9d4c58ab1e5fe41fd887fe)
+- Loom: https://www.loom.com/share/7195aed97d9d4c58ab1e5fe41fd887fe
 
 ## Future Plan (Backend First)
 - Generalize the RAG engine across codebases with consistent risk signals.
