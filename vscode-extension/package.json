@@ -1,0 +1,33 @@
+{
+  "name": "legacy-risk-analyzer",
+  "displayName": "Legacy Risk Analyzer",
+  "description": "Thin VS Code UI for risk-aware RAG backend (Bahmni/OpenMRS)",
+  "version": "0.1.0",
+  "engines": {
+    "vscode": "^1.84.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [
+    "onCommand:legacyRisk.analyze"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "legacyRisk.analyze",
+        "title": "Analyze Legacy Risk",
+        "category": "Legacy Risk"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^18.18.0",
+    "@types/vscode": "^1.84.0",
+    "typescript": "^5.4.0"
+  }
+}

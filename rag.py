@@ -844,6 +844,95 @@ def chat(
 
 
 @app.command()
+def analyze(
+    file: str = typer.Option(..., help="Absolute path or class name to analyze"),
+    root: str = typer.Option(".", help="Project root used to resolve class names"),
+    json_out: bool = typer.Option(True, "--json/--no-json", help="Emit JSON output"),
+):
+    """Analyze a single file using existing impact/risk logic and emit structured JSON.
+
+    This is a formatting-only entrypoint. It reuses current analyzers and heuristics without
+    changing any logic or scoring.
+    """
+    project_root = Path(os.path.expanduser(os.path.expandvars(root)))
+    target = resolve_target(file, project_root)
+    if not target:
+        console.print(f"[red]Could not resolve:[/red] {file} under root {project_root}")
+        raise typer.Exit(2)
+
+    deps = find_dependents(project_root, target.stem, target)
+    risk = analyze_risk(target, deps)
+
+    try:
+        text = target.read_text(errors="ignore")
+    except Exception:
+        text = ""
+    lines = text.splitlines()
+    start_line = 1
+    end_line = len(lines) if lines else 1
+
+    # Build a transient chunk-like object to reuse existing helpers
+    c = Chunk(
+        id=0,
+        file=str(target),
+        start_line=start_line,
+        end_line=end_line,
+        snippet=text,
+        risk_level=risk["level"],
+        risk_score=int(risk["score"]),
+        deps={"direct": int(risk["deps"]["direct"]), "indirect": int(risk["deps"]["indirect"])},
+        keywords=list(risk.get("keywords", [])),
+        signals=dict(risk.get("signals", {})),
+    )
+
+    rules_raw = _extract_rules(text)
+    rules_decl = _rules_to_invariants(rules_raw)
+    why_bullets = _build_risk_bullets(c)
+    safe, do_not = _build_guidance(c, text, rules_decl)
+    brief = _brief_explanation(c, start_line, end_line)
+
+    payload = {
+        "file": str(target),
+        "lines": {"start": start_line, "end": end_line},
+        "risk": {"level": c.risk_level, "score": c.risk_score},
+        "dependencies": {"direct": c.deps["direct"], "indirect": c.deps["indirect"]},
+        "critical_business_rules": rules_decl,
+        "why_risky": why_bullets,
+        "guidance": {"safe": safe, "do_not_touch": do_not},
+        "brief_explanation": brief,
+    }
+
+    if json_out:
+        console.print_json(data=payload)
+    else:
+        # Fallback: mirror ask-style panels without changing logic
+        sep = "\u2500" * 70
+        console.print(f"[bold]File:[/bold] {Path(c.file).name}")
+        console.print(f"[bold]Lines:[/bold] {start_line}–{end_line}")
+        console.print(f"[bold]Risk:[/bold] {c.risk_level} (score {c.risk_score})")
+        console.print(f"[bold]Dependencies:[/bold] direct={c.deps['direct']}, indirect={c.deps['indirect']}")
+        console.print(sep)
+        console.print("[bold]Critical Business Rules to Preserve[/bold]")
+        console.print("\n".join(f"- {r}" for r in (rules_decl or ["(none detected)"])))
+        console.print(sep)
+        console.print("[bold]Why This Is Risky[/bold]")
+        console.print("\n".join(f"- {b}" for b in why_bullets))
+        console.print(sep)
+        console.print("[bold]Optimization Guidance (Safe / Do Not Touch)[/bold]")
+        if safe:
+            console.print("[green]Safe:[/green]")
+            for s in safe:
+                console.print(f"- {s}")
+        if do_not:
+            console.print("[bold red]DO NOT TOUCH:[/bold red]")
+            for d in do_not:
+                console.print(f"‼ {d}")
+        console.print(sep)
+        console.print("[bold]Brief Explanation[/bold]")
+        console.print(brief)
+
+
+@app.command()
 def scan(
     query: str = typer.Argument(..., help="Substring to search in Java file names (e.g., PatientService)"),
     root: str = typer.Option(".", help="Project root to scan for .java files"),
