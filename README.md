@@ -65,3 +65,39 @@ rag chat
 - Generalize the RAG engine across codebases with consistent risk signals.
 - Improve structural and domain signals (transactions, authorization, exception contracts).
 - Expose as a reusable backend service (JSON/HTTP), ready for CI/CD and tools.
+
+## QA / Evaluation
+- Grounding: Every response must include file path and explicit line ranges.
+  - Validate with: `python3 rag.py analyze --file /abs/path/to/File.java --json` and check `file`, `lines.start`, `lines.end`.
+  - Validate retrieval outputs with: `python3 rag.py ask "<question>" --best --simple` to see grounded snippet lines.
+- Consistency: Re-run the same query twice and compare outputs.
+  - Expect identical `risk.level`, `risk.score`, `dependencies`, and rule lists unless files changed.
+- Sanity: Core services should rank higher risk than utilities.
+  - Check `risk.level` and `score` for domain services (e.g., `PatientService*`) vs helper/utility classes.
+- Safety: Guidance must never propose business-logic rewrites or bypass validations.
+  - Inspect `guidance.do_not_touch` includes transaction boundaries, validations/exceptions, and authorization.
+  - Confirm `guidance.safe` limits to logging or micro-optimizations.
+
+Quick commands:
+
+```bash
+# Analyze a single file (JSON)
+python3 rag.py analyze --file /absolute/path/to/PatientService.java --json
+
+# Ask a question against indexed files (simple grounded output)
+python3 rag.py ask --best "Why is PatientService risky?" --simple
+```
+
+## Troubleshooting
+- Error: "Could not resolve" — the path or root is incorrect.
+  - Use an absolute file path, or pass a path relative to `--root`.
+  - You can also pass a class name (stem) with `--root` (e.g., `--file PatientService --root /path/to/openmrs-core`).
+  - Discover files first:
+
+```bash
+python3 rag.py scan PatientService --root /path/to/openmrs-core
+```
+
+- Tips:
+  - When in VS Code, the extension passes your workspace folder as `--root` automatically.
+  - For CLI runs, set `--root` to the project containing your `.java` files.

@@ -1,12 +1,20 @@
 import * as vscode from 'vscode';
 import { execFile } from 'child_process';
 import * as path from 'path';
+import * as fs from 'fs';
 
-function runBackendAnalyze(workspaceRoot: string, filePath: string): Promise<any> {
+function stripAnsi(input: string): string {
+  // Remove ANSI escape codes (colors, styles) that may be added by rich
+  // eslint-disable-next-line no-control-regex
+  const ansiRegex = /\u001b\[[0-9;]*m/g;
+  return input.replace(ansiRegex, '');
+}
+
+function runBackendAnalyze(backendRoot: string, filePath: string, projectRoot: string): Promise<any> {
   return new Promise((resolve, reject) => {
     const py = process.env.PYTHON || 'python3';
-    const args = ['rag.py', 'analyze', '--file', filePath, '--json'];
-    const options = { cwd: workspaceRoot };
+    const args = ['rag.py', 'analyze', '--file', filePath, '--json', '--root', projectRoot];
+    const options = { cwd: backendRoot };
 
     execFile(py, args, options, (error, stdout, stderr) => {
       if (error) {
@@ -14,7 +22,9 @@ function runBackendAnalyze(workspaceRoot: string, filePath: string): Promise<any
         return;
       }
       try {
-        const json = JSON.parse(stdout.toString());
+        const raw = stdout.toString();
+        const clean = stripAnsi(raw).trim();
+        const json = JSON.parse(clean);
         resolve(json);
       } catch (e: any) {
         reject(new Error(`Failed to parse backend JSON: ${e.message}\nOutput: ${stdout}\nErrors: ${stderr}`));
@@ -88,6 +98,9 @@ function renderHtml(result: any): string {
 }
 
 export function activate(context: vscode.ExtensionContext) {
+  // Lightweight signal to confirm the extension is loaded in the Dev Host
+  vscode.window.setStatusBarMessage('Legacy Risk Analyzer active', 3000);
+
   const disposable = vscode.commands.registerCommand('legacyRisk.analyze', async () => {
     const editor = vscode.window.activeTextEditor;
     if (!editor) {
@@ -97,11 +110,20 @@ export function activate(context: vscode.ExtensionContext) {
 
     const filePath = editor.document.uri.fsPath;
     const workspaceFolders = vscode.workspace.workspaceFolders;
-    if (!workspaceFolders || workspaceFolders.length === 0) {
-      vscode.window.showWarningMessage('Open a workspace folder with the backend.');
+    const fileWorkspace = vscode.workspace.getWorkspaceFolder(editor.document.uri);
+    const projectRoot = fileWorkspace ? fileWorkspace.uri.fsPath : (workspaceFolders && workspaceFolders.length ? workspaceFolders[0].uri.fsPath : '');
+
+    // Determine backend root (where rag.py lives)
+    const config = vscode.workspace.getConfiguration('legacyRisk');
+    let backendRoot = String(config.get('backendRoot') || '').trim();
+    if (!backendRoot) {
+      backendRoot = (workspaceFolders && workspaceFolders.length) ? workspaceFolders[0].uri.fsPath : '';
+    }
+    const ragPath = backendRoot ? path.join(backendRoot, 'rag.py') : '';
+    if (!backendRoot || !fs.existsSync(ragPath)) {
+      vscode.window.showErrorMessage('Backend not found. Set "legacyRisk.backendRoot" to the folder that contains rag.py.');
       return;
     }
-    const workspaceRoot = workspaceFolders[0].uri.fsPath;
 
     const panel = vscode.window.createWebviewPanel(
       'legacyRiskInsights',
@@ -113,7 +135,7 @@ export function activate(context: vscode.ExtensionContext) {
     panel.webview.html = `<html><body>Running analysis…</body></html>`;
 
     try {
-      const result = await runBackendAnalyze(workspaceRoot, filePath);
+      const result = await runBackendAnalyze(backendRoot, filePath, projectRoot);
       panel.webview.html = renderHtml(result);
     } catch (err: any) {
       panel.webview.html = `<html><body><pre>${(err?.message || String(err)).replace(/</g, '&lt;')}</pre></body></html>`;

@@ -8,7 +8,8 @@
   },
   "categories": ["Other"],
   "activationEvents": [
-    "onCommand:legacyRisk.analyze"
+    "onCommand:legacyRisk.analyze",
+    "onStartupFinished"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -18,7 +19,25 @@
         "title": "Analyze Legacy Risk",
         "category": "Legacy Risk"
       }
-    ]
+    ],
+    "keybindings": [
+      {
+        "command": "legacyRisk.analyze",
+        "key": "cmd+alt+r",
+        "mac": "cmd+alt+r",
+        "when": "editorTextFocus"
+      }
+    ],
+    "configuration": {
+      "title": "Legacy Risk Analyzer",
+      "properties": {
+        "legacyRisk.backendRoot": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the backend repo folder containing rag.py (e.g., /Users/.../bahmni). If empty, uses the first workspace folder."
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
