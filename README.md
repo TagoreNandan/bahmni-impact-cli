@@ -1,4 +1,4 @@
-# Bahmni / OpenMRS Risk‑Aware RAG Backend (CLI)
+# Bahmni Risk‑Aware RAG Backend (CLI)
 
 ## What Problem This Solves (Legacy Risk & Uncertainty)
 - Legacy clinical systems are brittle: changes can silently break core patient flows.
@@ -59,7 +59,7 @@ rag chat
 ```
 
 ## Demo:
-- Loom: https://www.loom.com/share/7195aed97d9d4c58ab1e5fe41fd887fe
+- Loom: https://www.loom.com/share/30aa52e3385643b38b475012bf1b6e7e
 
 ## Future Plan (Backend First)
 - Generalize the RAG engine across codebases with consistent risk signals.
