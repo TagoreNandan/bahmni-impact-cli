@@ -18,3 +18,13 @@ dist/
 
 # VS Code
 .vscode/
+
+# Node
+vscode-extension/node_modules/
+vscode-extension/out/
+
+# Generated RAG index
+.rag_index/
+
+# Root-only lockfile (no root package.json)
+/package-lock.json

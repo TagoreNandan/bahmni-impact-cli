@@ -30,7 +30,7 @@ from rich.syntax import Syntax
 from sklearn.feature_extraction.text import HashingVectorizer
 
 # Reuse the existing impact analysis to get risk metadata
-from impact import iter_java_files, resolve_target, find_dependents, analyze_risk
+from impact import iter_java_files, resolve_target, find_dependents, analyze_risk, RISK_KEYWORDS
 
 app = typer.Typer(help="RAG CLI for Bahmni legacy code intelligence (demo)")
 console = Console()
@@ -51,6 +51,43 @@ def make_vectorizer() -> HashingVectorizer:
         norm="l2",
         lowercase=True,
     )
+
+# Compute snippet-level signals and risk using the same heuristic weights
+def compute_chunk_risk(snippet: str, direct: int, indirect: int) -> Dict[str, any]:
+    s_lower = snippet.lower()
+
+    keyword_hits = sorted({kw for kw in RISK_KEYWORDS if kw in s_lower})
+    throws_count = len(re.findall(r"\bthrow\b", s_lower)) + len(re.findall(r"\bthrows\b", s_lower))
+    validate_count = len(re.findall(r"\bvalidate\w*\b", s_lower))
+    transactional_hits = len(re.findall(r"@transactional", s_lower))
+    null_checks = len(re.findall(r"(?:not\s+null|!=\s*null|==\s*null)", s_lower))
+
+    score = 0
+    score += min(int(direct) * 3, 18)
+    score += min(int(indirect) * 2, 12)
+    score += min(len(keyword_hits) * 2, 12)
+    score += min((throws_count + validate_count), 8)
+    score += min(transactional_hits * 3, 9)
+    score += min(null_checks, 6)
+
+    if score >= 28:
+        level = "HIGH"
+    elif score >= 16:
+        level = "MEDIUM"
+    else:
+        level = "LOW"
+
+    return {
+        "score": int(score),
+        "level": level,
+        "keywords": keyword_hits,
+        "signals": {
+            "throws": throws_count,
+            "validate": validate_count,
+            "transactional": transactional_hits,
+            "null_checks": null_checks,
+        },
+    }
 
 
 @dataclass
@@ -776,13 +813,27 @@ def chat(
         # Update focus to this top file (by absolute path and name for robustness)
         focus_files = [str(Path(c.file)), Path(c.file).name]
 
-        # Derive structured sections
-        rules_raw = _extract_rules(c.snippet)
+        # Derive structured sections with per-snippet risk
+        chunk_risk = compute_chunk_risk(c.snippet, c.deps.get("direct", 0), c.deps.get("indirect", 0))
+        dynamic = Chunk(
+            id=c.id,
+            file=c.file,
+            start_line=c.start_line,
+            end_line=c.end_line,
+            snippet=c.snippet,
+            risk_level=chunk_risk["level"],
+            risk_score=int(chunk_risk["score"]),
+            deps={"direct": c.deps.get("direct", 0), "indirect": c.deps.get("indirect", 0)},
+            keywords=list(chunk_risk.get("keywords", [])),
+            signals=dict(chunk_risk.get("signals", {})),
+        )
+
+        rules_raw = _extract_rules(dynamic.snippet)
         rules_decl = _rules_to_invariants(rules_raw)
-        risky = _build_risk_bullets(c)
-        safe, do_not = _build_guidance(c, c.snippet, rules_decl)
-        line_range = f"{c.start_line}–{c.end_line}"
-        brief = _brief_explanation(c, c.start_line, c.end_line)
+        risky = _build_risk_bullets(dynamic)
+        safe, do_not = _build_guidance(dynamic, dynamic.snippet, rules_decl)
+        line_range = f"{dynamic.start_line}–{dynamic.end_line}"
+        brief = _brief_explanation(dynamic, dynamic.start_line, dynamic.end_line)
 
         # Verdict derived from risk level (formatting only)
         verdict_map = {
@@ -790,7 +841,7 @@ def chat(
             "MEDIUM": "CAUTION: AVOID BEHAVIORAL CHANGES",
             "LOW": "SAFE FOR NON-FUNCTIONAL OPTIMIZATIONS ONLY",
         }
-        verdict = verdict_map.get(c.risk_level, "Review safeguards before changes")
+        verdict = verdict_map.get(dynamic.risk_level, "Review safeguards before changes")
 
         # Render stable text with separators and emphasis
         sep = "\u2500" * 70  # heavy horizontal line
@@ -798,8 +849,8 @@ def chat(
         lines.append(f"[bold]Verdict:[/bold] [red]{verdict}[/red]")
         lines.append(f"[bold]File:[/bold] {Path(c.file).name}")
         lines.append(f"[bold]Lines:[/bold] {line_range}")
-        lines.append(f"[bold]Risk:[/bold] [red]{c.risk_level}[/red] (score {c.risk_score})")
-        lines.append(f"[bold]Dependencies:[/bold] direct={c.deps['direct']}, indirect={c.deps['indirect']}")
+        lines.append(f"[bold]Risk:[/bold] [red]{dynamic.risk_level}[/red] (score {dynamic.risk_score})")
+        lines.append(f"[bold]Dependencies:[/bold] direct={dynamic.deps['direct']}, indirect={dynamic.deps['indirect']}")
         lines.append("")
 
         # Critical Business Rules
@@ -840,7 +891,7 @@ def chat(
         console.print("\n".join(lines))
         # Minimal, neutral guidance footer (formatting only)
         console.print("[dim]Next step: restrict changes to non-functional optimizations only.[/dim]")
-        console.print(f"\n[dim]Focus: {Path(c.file).name} — {c.risk_level} risk[/dim]\n")
+        console.print(f"\n[dim]Focus: {Path(dynamic.file).name} — {dynamic.risk_level} risk[/dim]\n")
 
 
 @app.command()
